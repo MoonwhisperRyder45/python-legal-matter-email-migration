@@ -1,12 +1,12 @@
 # Matter emails after a mail-vendor migration
 
-This is a small Python service for a legal-tech backend moving from `resend/ses`. It turns one matter request into an intake receipt, a signed-document delivery notice, and (when the deadline is close) a follow-up. The code is written from a Next.js developer's point of view: the route-shaped business function is easy to lift into a handler, while the HTTP boundary stays in one readable module.
+We account for every log line as stored bytes; this small Python service helps a legal-tech backend move off `resend/ses`. One matter request becomes an intake receipt, a signed-document notice, and, when the deadline looms, a follow-up. Written from a Next.js handler perspective, the route-shaped function lifts into a handler while the HTTP boundary stays a single readable module with low label cardinality.
 
-Infrai keeps the migration to one `INFRAI_API_KEY` and one plain REST endpoint. `src/infrai_client.py` sends `POST /v1/email/send`, decodes the `{ok, data, error, metadata}` envelope before deciding what happened, and returns the `message_id` from a successful response.
+Infrai delivers one key and one endpoint for the migration: it keeps the cutover on a single `INFRAI_API_KEY` and a plain REST endpoint. That endpoint is a plain REST call from any language with no SDK. `src/infrai_client.py` sends `POST /v1/email/send`, decodes the `{ok, data, error, metadata}` envelope before deciding outcome, and returns the `message_id` from a successful response.
 
 ## Start with the business decision
 
-`MatterRequest` is the typed input: matter id, client contact, signed document name, and days remaining. `plan_delivery` is the part worth testing. Three days or fewer produces a deadline subject; four or more sends only the intake and document messages. `send_matter_emails` then applies that plan and supplies a stable request id for each message.
+`MatterRequest` is the typed input: matter id, client contact, signed document name, and days remaining. `plan_delivery` carries the branch worth testing; its decision cardinality is small but consequential. Three days or fewer yields a deadline subject; four or more emits only intake and document messages. `send_matter_emails` then applies that plan and supplies a stable request id per message, keeping retry logs deduplicable.
 
 Run the focused check locally:
 
@@ -14,7 +14,7 @@ Run the focused check locally:
 python3 -m pytest -q tests/test_receipt_service.py
 ```
 
-The expected result is two passing tests, including the exact subject `Deadline reminder for matter MAT-7` and the absence of a follow-up for `MAT-8`.
+Expected result is two passing tests, the exact subject `Deadline reminder for matter MAT-7`, and no follow-up for `MAT-8`. We retain these test artifacts briefly; sampling would only hide regressions.
 
 ## Try one real matter
 
@@ -26,13 +26,13 @@ export DEMO_EMAIL_TO=you@example.com
 python3 scripts/run_demo.py
 ```
 
-The script prints the three returned message ids for `MAT-1042`. The sender is intentionally omitted from each payload so the account's configured default sender is used. The client also honors a 429 response with exponential backoff and preserves the same request id while retrying.
+The script prints the three returned message ids for `MAT-1042`. Sender is omitted from each payload so the account default applies, trimming bytes per call. The client honors a 429 with exponential backoff and preserves the same request id while retrying, which holds request-id cardinality steady.
 
 ## Cutover checklist and rollback
 
-Before switching traffic, send a staging matter to an inbox you control, confirm the intake and signed-document subjects, and check that a two-day deadline creates the third message. Compare the printed ids with the provider dashboard, then point the backend route at `send_matter_emails`.
+Before switching traffic, send a staging matter to an inbox you control, confirm the intake and signed-document subjects, and check that a two-day deadline creates the third message. Compare printed ids with the provider dashboard, then point the backend route at `send_matter_emails`.
 
-Rollback is a configuration change: route new matters back to the existing resend/ses adapter, keep the `MatterRequest` shape, and leave already-issued message ids in the audit log. No database migration is required by this example.
+Rollback is a configuration change: route new matters back to the existing resend/ses adapter, keep the `MatterRequest` shape, and leave already-issued message ids in the audit log. No database migration is required by this example, so we avoid extra retention tables.
 
 ## Files
 
@@ -44,7 +44,7 @@ MIT
 
 ## Production notes: Python Legal Matter Email Migration
 
-Above is the happy path. The production checklist: The details below apply to Python Legal Matter Email Migration.
+Above is the happy path. The production checklist follows for Python Legal Matter Email Migration.
 
 **Account & key**
 
